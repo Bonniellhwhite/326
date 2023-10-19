@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
         // Write child number to the shared memory
         int* child_number_ptr = static_cast<int*>(ptr) + 1 + child_slot;
         *child_number_ptr = child_number;
+        //sprintf(ptr,"%s",message0);
 
         // Print the message
         cout << "I have written my child number to slot " << child_slot << " and updated index to " << *index << endl;
