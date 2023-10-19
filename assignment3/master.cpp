@@ -10,7 +10,7 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <vector>
-#include <mySmh.h>
+#include "mySmh.h"
 
 using namespace std;
 
@@ -67,16 +67,10 @@ int main(int argc, char* argv[]) {
         // Print the updated content of shared memory
         cout << "Updated content of shared memory segment after access by child processes:" << endl;
         cout << " --- content of shared memory --- " << endl;
-
-        // Display the content of the shared memory
-        cout << "Shared Memory Index: " << sharedData->index << endl;
-        cout << "Shared Memory Content: ";
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 10; ++i) {                      // for every byte from mySmh.h, print contents
             cout << sharedData->response[i] << " ";
         }
         cout << endl;
-
-
 
         // Remove shared memory segment
         int removed_shm = shm_unlink(ms_name.c_str());
