@@ -27,10 +27,8 @@ int main(int argc, char* argv[]) {
         // Creating shared memory segment (0666 means read-write permissions for owner, group, all)
         int shm = shm_open(ms_name.c_str(), O_CREAT | O_RDWR, 0666);
         ftruncate(shm, 4096);                                                    // Configure size of memory segment
-        void* ptr = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);   // Map shared memory segment in address space of the proccess, aka shared memory base 
-
-        int* index = static_cast<int*>(ptr);                                     //Initializing a pointer
-        *index = 0;  // Initialize index to 0                                    // Setting starting pointer to 0 for memory segment writes 
+        CLASS* sharedData = static_cast<CLASS*>(mmap(0, sizeof(CLASS), PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0));  // Map shared memory segment
+        sharedData->index = 0;
 
         cout << "Master created a shared memory segment named " << ms_name << endl;
 
@@ -69,9 +67,14 @@ int main(int argc, char* argv[]) {
         // Print the updated content of shared memory
         cout << "Updated content of shared memory segment after access by child processes:" << endl;
         cout << " --- content of shared memory --- " << endl;
+
         // Display the content of the shared memory
-        const char* content = static_cast<const char*>(ptr);
-        cout << "Shared Memory Content: " << content << endl;
+        cout << "Shared Memory Index: " << sharedData->index << endl;
+        cout << "Shared Memory Content: ";
+        for (int i = 0; i < 10; ++i) {
+            cout << sharedData->response[i] << " ";
+        }
+        cout << endl;
 
 
 
