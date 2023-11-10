@@ -44,6 +44,8 @@
         "numbers": "cpp",
         "stdexcept": "cpp",
         "streambuf": "cpp",
-        "typeinfo": "cpp"
-    }
+        "typeinfo": "cpp",
+        "fcntl.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "enabled"
 }

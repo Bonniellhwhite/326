@@ -1,84 +1,72 @@
 #include <iostream>
 #include <string>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/shm.h>
 #include <semaphore.h>
+#include "myShm.h" // Ensure this is the correct header file name
 
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    if (argc == 4) {
-        int child_number = stoi(argv[1]);
-
-        cout << "Slave begins execution" << endl;
-        cout << "I am child number " << child_number << ", received shared memory name " << argv[2] << " and " << argv[3] << endl;
-
-        // Open existing shared memory segment
-        int shm = shm_open(argv[2], O_RDWR, 0666);
-        if (shm == -1) {
-            perror("Failed to open shared memory segment");
-            return 1;
-        }
-
-        // Open existing semaphore
-        sem_t* mySemaphore = sem_open(argv[3], 0);
-        if (mySemaphore == SEM_FAILED) {
-            perror("Failed to open semaphore");
-            close(shm);
-            return 1;
-        }
-
-        // Map shared memory into the address space of the process
-        void* ptr = mmap(0, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-        if (ptr == MAP_FAILED) {
-            cerr << "Failed to map shared memory" << endl;
-            close(shm);
-            sem_close(mySemaphore);
-            return 1;
-        }
-
-        // Access shared memory with semaphore protection
-        sem_wait(mySemaphore);  // Wait for semaphore
-        int* index = static_cast<int*>(ptr);
-        int child_slot = (*index)++;  // Get the next available slot
-        sem_post(mySemaphore);  // Release semaphore
-
-        int luckyNum;
-        cout << "Child number " << child_number << ": What is my lucky number?" << endl;
-        cout << "Enter Number:";
-        cin >> luckyNum;
-
-        // Access shared memory with semaphore protection
-        sem_wait(mySemaphore);  // Wait for semaphore
-        // Write child number to the shared memory
-        int* child_number_ptr = static_cast<int*>(ptr) + 1 + child_slot;
-        *child_number_ptr = child_number;
-        // Update the index
-        (*index)++;
-        sem_post(mySemaphore);  // Release semaphore
-
-        // Print the message
-        cout << "I have written my child number to slot " << child_slot << " and my lucky number to " << child_slot + 1 << ", and updated index to " << child_slot + 2 << endl;
-
-        // Unmap shared memory
-        munmap(ptr, sizeof(int));
-
-        // Close shared memory
-        close(shm);
-
-        // Close semaphore
-        sem_close(mySemaphore);
-
-        cout << "Child " << child_number << " closed access to shared memory and terminates." << endl;
-    } else {
-        cout << "Usage: ./slave <child_number> <ms_name> <sem_name>" << endl;
+    if (argc != 4) {
+        cerr << "Usage: " << argv[0] << " <child_number> <shm_name> <sem_name>" << endl;
         return 1;
+    }
+
+    int child_number = stoi(argv[1]);
+    string shm_name = argv[2];
+    string sem_name = argv[3];
+
+    int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("shm_open failed");
+        return 1;
+    }
+
+    CLASS* shared_data = static_cast<CLASS*>(mmap(NULL, sizeof(CLASS), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    if (shared_data == MAP_FAILED) {
+        perror("mmap failed");
+        close(shm_fd);
+        return 1;
+    }
+
+    sem_t* my_sem = sem_open(sem_name.c_str(), 0);
+    if (my_sem == SEM_FAILED) {
+        perror("sem_open failed");
+        munmap(shared_data, sizeof(CLASS));
+        close(shm_fd);
+        return 1;
+    }
+
+    if (sem_wait(my_sem) == -1) {
+        perror("sem_wait failed");
+        sem_close(my_sem);
+        munmap(shared_data, sizeof(CLASS));
+        close(shm_fd);
+        return 1;
+    }
+
+    int idx = shared_data->index;
+    shared_data->response[idx].child_number = child_number;
+
+    cout << "Child number " << child_number << ": What is my lucky number?" << endl;
+    cin >> shared_data->response[idx].lucky_number;
+
+    shared_data->index++;
+
+    if (sem_post(my_sem) == -1) {
+        perror("sem_post failed");
+    }
+
+    if (sem_close(my_sem) == -1) {
+        perror("sem_close failed");
+    }
+    if (munmap(shared_data, sizeof(CLASS)) == -1) {
+        perror("munmap failed");
+    }
+    if (close(shm_fd) == -1) {
+        perror("close failed");
     }
 
     return 0;

@@ -1,107 +1,95 @@
 #include <iostream>
 #include <string>
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <vector>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/shm.h>
-#include <sys/wait.h>
-#include <vector>
-#include <semaphore.h> 
-#include "mySmh.h"
+#include <semaphore.h>
+#include <sys/wait.h> 
+#include "myShm.h" // Ensure this is the correct header file name
 
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    if (argc == 4) {
-        cout << "Master begins execution" << endl;
-
-        // Retrieving # of processes from argument
-        int num_processes = stoi(argv[1]);  // Use stoi to convert string to integer
-
-        // Retrieving Name from 3rd element of argument vector
-        string ms_name = argv[2];
-
-        // Retrieving Name from 4th element of argument vector 
-        string semaphore_name = argv[3];
-    
-        
-        // Creating shared memory segment (0666 means read-write permissions for owner, group, all)
-        cout << "Master created a shared memory segment named " << ms_name << endl;
-        int shm = shm_open(ms_name.c_str(), O_CREAT | O_RDWR, 0666);
-        ftruncate(shm, sizeof(CLASS));  // Configure size of memory segment
-        CLASS* sharedData = static_cast<CLASS*>(mmap(0, sizeof(CLASS), PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0));  // Map shared memory segment
-        cout << "Master initializes index in the shared structure to zero" << endl;
-        sharedData->index = 0;
-
-         // Create and initialize the semaphore
-        cout << "Master created a semaphore named " << semaphore_name << endl;
-        sem_t* mySemaphore = sem_open(semaphore_name.c_str(), O_CREAT | O_EXCL, 0666, 1);
-        if (mySemaphore == SEM_FAILED) {
-            perror("Semaphore creation failed");
-            return 1;
-        }
-
-        // Vector to store child process IDs
-        vector<pid_t> child_processes;
-
-        for (int i = 0; i < num_processes; i++) {
-            pid_t child = fork();
-
-            if (child < 0) {
-                cerr << "Fork failed." << endl;
-                return 1;
-            } else if (child == 0) {
-                // Child process
-                const char* child_args[] = {"./slave", to_string(i).c_str(), ms_name.c_str(), semaphore_name.c_str(), nullptr};
-                execvp("./slave", const_cast<char* const*>(child_args));
-
-                // If execvp fails
-                perror("Exec failed");
-                return 1;
-            } else {
-                child_processes.push_back(child);
-            }
-        }
-
-        cout << "Master created " << num_processes << " child processes to execute slave" << endl;
-
-        cout << "Master waits for all child processes to terminate" << endl;
-        for (pid_t kid : child_processes) {
-            int status;
-            if (waitpid(kid, &status, 0) == -1) {
-                perror("Waitpid failed");
-                return 1;
-            }
-        }
-        cout << "Master received termination signals from all " << num_processes << " child processes" << endl;
-
-        // Print the updated content of shared memory
-        cout << "Updated content of shared memory segment after access by child processes:" << endl;
-        cout << " --- content of shared memory --- " << endl;
-        for (int i = 0; i < 10; ++i) {
-            cout << sharedData->response[i] << " ";
-        }
-        cout << endl;
-
-        // Close and unlink the semaphore
-        sem_close(mySemaphore);
-        sem_unlink(semaphore_name.c_str());
-
-        // Remove shared memory segment
-        int removed_shm = shm_unlink(ms_name.c_str());
-        if (removed_shm == 0) {
-            cout << "Master removed shared memory segment, and is exiting" << endl;
-        } else {
-            perror("Error removing shared memory segment");
-            return 1;
-        }
-    } else {
-        cout << "Incorrect # of Arguments" << endl;
+    if (argc != 4) {
+        cerr << "Usage: " << argv[0] << " <num_processes> <shm_name> <sem_name>" << endl;
         return 1;
+    }
+
+    cout << "Master begins execution" << endl;
+
+    int num_processes = stoi(argv[1]);
+    string shm_name = argv[2];
+    string sem_name = argv[3];
+
+    int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("shm_open failed");
+        return 1;
+    }
+
+    if (ftruncate(shm_fd, sizeof(CLASS)) == -1) {
+        perror("ftruncate failed");
+        close(shm_fd);
+        return 1;
+    }
+
+    CLASS* shared_data = static_cast<CLASS*>(mmap(NULL, sizeof(CLASS), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    if (shared_data == MAP_FAILED) {
+        perror("mmap failed");
+        close(shm_fd);
+        return 1;
+    }
+
+    shared_data->index = 0;
+
+    sem_t* my_sem = sem_open(sem_name.c_str(), O_CREAT | O_EXCL, 0666, 1);
+    if (my_sem == SEM_FAILED) {
+        perror("sem_open failed");
+        munmap(shared_data, sizeof(CLASS));
+        close(shm_fd);
+        return 1;
+    }
+
+    vector<pid_t> children;
+    for (int i = 0; i < num_processes; ++i) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            execlp("./slave", "slave", to_string(i).c_str(), shm_name.c_str(), sem_name.c_str(), (char *)NULL);
+            perror("execlp failed");
+            exit(1);
+        } else if (pid > 0) {
+            children.push_back(pid);
+        } else {
+            perror("fork failed");
+            continue;
+        }
+    }
+
+    for (pid_t child : children) {
+        int status;
+        waitpid(child, &status, 0);
+    }
+
+    for (int i = 0; i < shared_data->index; ++i) {
+        cout << "Child " << shared_data->response[i].child_number << " wrote lucky number " << shared_data->response[i].lucky_number << endl;
+    }
+
+    if (sem_close(my_sem) == -1) {
+        perror("sem_close failed");
+    }
+    if (sem_unlink(sem_name.c_str()) == -1) {
+        perror("sem_unlink failed");
+    }
+
+    if (munmap(shared_data, sizeof(CLASS)) == -1) {
+        perror("munmap failed");
+    }
+    if (close(shm_fd) == -1) {
+        perror("close failed");
+    }
+    if (shm_unlink(shm_name.c_str()) == -1) {
+        perror("shm_unlink failed");
     }
 
     return 0;
