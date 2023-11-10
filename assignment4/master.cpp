@@ -27,42 +27,47 @@ int main(int argc, char* argv[]) {
 
         // Retrieving Name from 4th element of argument vector 
         string semaphore_name = argv[3];
-
+    
+        
         // Creating shared memory segment (0666 means read-write permissions for owner, group, all)
+        cout << "Master created a shared memory segment named " << ms_name << endl;
         int shm = shm_open(ms_name.c_str(), O_CREAT | O_RDWR, 0666);
-        ftruncate(shm, 4096);                                                    // Configure size of memory segment
+        ftruncate(shm, sizeof(CLASS));  // Configure size of memory segment
         CLASS* sharedData = static_cast<CLASS*>(mmap(0, sizeof(CLASS), PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0));  // Map shared memory segment
+        cout << "Master initializes index in the shared structure to zero" << endl;
         sharedData->index = 0;
 
-        cout << "Master created a shared memory segment named " << ms_name << endl;
-
-        cout << "Master created a semaphore named " << semaphore_name <<endl;
-
-
+         // Create and initialize the semaphore
+        cout << "Master created a semaphore named " << semaphore_name << endl;
+        sem_t* mySemaphore = sem_open(semaphore_name.c_str(), O_CREAT | O_EXCL, 0666, 1);
+        if (mySemaphore == SEM_FAILED) {
+            perror("Semaphore creation failed");
+            return 1;
+        }
 
         // Vector to store child process IDs
         vector<pid_t> child_processes;
 
-        for (int i = 0; i < num_processes; i++) {       // for every process
-            pid_t child = fork();                       // Fork Parent aka Master 
+        for (int i = 0; i < num_processes; i++) {
+            pid_t child = fork();
 
-            if (child < 0) {                            // if id is negative, failed 
+            if (child < 0) {
                 cerr << "Fork failed." << endl;
                 return 1;
-            } else if (child == 0) {                   // if success execute slave
+            } else if (child == 0) {
                 // Child process
-                const char* child_args[] = {"./slave", to_string(i).c_str(), ms_name.c_str(), semaphore_name.c_str(),nullptr}; // creating an array of args, process number to cstr, and msname to cstr
-                execvp("./slave", const_cast<char* const*>(child_args)); // changing process image to slave file, executing those instructions 
+                const char* child_args[] = {"./slave", to_string(i).c_str(), ms_name.c_str(), semaphore_name.c_str(), nullptr};
+                execvp("./slave", const_cast<char* const*>(child_args));
 
                 // If execvp fails
                 perror("Exec failed");
                 return 1;
             } else {
-                child_processes.push_back(child); // if everything was successful, add id to child process vector
+                child_processes.push_back(child);
             }
         }
 
-        cout << "Master created " << num_processes << "child processs to execute slave"<<endl;
+        cout << "Master created " << num_processes << " child processes to execute slave" << endl;
 
         cout << "Master waits for all child processes to terminate" << endl;
         for (pid_t kid : child_processes) {
@@ -77,10 +82,14 @@ int main(int argc, char* argv[]) {
         // Print the updated content of shared memory
         cout << "Updated content of shared memory segment after access by child processes:" << endl;
         cout << " --- content of shared memory --- " << endl;
-        for (int i = 0; i < 10; ++i) {                      // for every byte from mySmh.h, print contents
+        for (int i = 0; i < 10; ++i) {
             cout << sharedData->response[i] << " ";
         }
         cout << endl;
+
+        // Close and unlink the semaphore
+        sem_close(mySemaphore);
+        sem_unlink(semaphore_name.c_str());
 
         // Remove shared memory segment
         int removed_shm = shm_unlink(ms_name.c_str());

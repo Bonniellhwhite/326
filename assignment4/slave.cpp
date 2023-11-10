@@ -8,15 +8,16 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/shm.h>
+#include <semaphore.h>
 
 using namespace std;
 
-int main(int argc, char* argv[], char* argv[]) {
-    if (argc == 3) {
+int main(int argc, char* argv[]) {
+    if (argc == 4) {
         int child_number = stoi(argv[1]);
 
         cout << "Slave begins execution" << endl;
-        cout << "I am child number " << child_number << ", received shared memory name " << argv[2] << "and" << argv[3] << endl;
+        cout << "I am child number " << child_number << ", received shared memory name " << argv[2] << " and " << argv[3] << endl;
 
         // Open existing shared memory segment
         int shm = shm_open(argv[2], O_RDWR, 0666);
@@ -25,29 +26,45 @@ int main(int argc, char* argv[], char* argv[]) {
             return 1;
         }
 
+        // Open existing semaphore
+        sem_t* mySemaphore = sem_open(argv[3], 0);
+        if (mySemaphore == SEM_FAILED) {
+            perror("Failed to open semaphore");
+            close(shm);
+            return 1;
+        }
+
         // Map shared memory into the address space of the process
         void* ptr = mmap(0, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
         if (ptr == MAP_FAILED) {
             cerr << "Failed to map shared memory" << endl;
             close(shm);
+            sem_close(mySemaphore);
             return 1;
         }
 
-        // Access shared memory
+        // Access shared memory with semaphore protection
+        sem_wait(mySemaphore);  // Wait for semaphore
         int* index = static_cast<int*>(ptr);
         int child_slot = (*index)++;  // Get the next available slot
+        sem_post(mySemaphore);  // Release semaphore
+
         int luckyNum;
-        cout << "Child number" << child_number << ": What is my lucky number?"<< endl;
+        cout << "Child number " << child_number << ": What is my lucky number?" << endl;
         cout << "Enter Number:";
         cin >> luckyNum;
 
+        // Access shared memory with semaphore protection
+        sem_wait(mySemaphore);  // Wait for semaphore
         // Write child number to the shared memory
         int* child_number_ptr = static_cast<int*>(ptr) + 1 + child_slot;
         *child_number_ptr = child_number;
-        //sprintf(ptr,"%s",message0);
+        // Update the index
+        (*index)++;
+        sem_post(mySemaphore);  // Release semaphore
 
         // Print the message
-        cout << "I have written my child number to slot " << index << " and my lucky number to " << index+1 << ", and updated index to" << index+2 << endl; 
+        cout << "I have written my child number to slot " << child_slot << " and my lucky number to " << child_slot + 1 << ", and updated index to " << child_slot + 2 << endl;
 
         // Unmap shared memory
         munmap(ptr, sizeof(int));
@@ -55,9 +72,12 @@ int main(int argc, char* argv[], char* argv[]) {
         // Close shared memory
         close(shm);
 
+        // Close semaphore
+        sem_close(mySemaphore);
+
         cout << "Child " << child_number << " closed access to shared memory and terminates." << endl;
     } else {
-        cout << "Usage: ./slave <child_number> <ms_name>" << endl;
+        cout << "Usage: ./slave <child_number> <ms_name> <sem_name>" << endl;
         return 1;
     }
 
