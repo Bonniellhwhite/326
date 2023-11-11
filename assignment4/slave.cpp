@@ -9,14 +9,20 @@
 using namespace std;
 
 int main(int argc, char* argv[]) {
+
+    cout << "Slave begins execution" << endl;    
     if (argc != 4) {
         cerr << "Usage: " << argv[0] << " <child_number> <shm_name> <sem_name>" << endl;
         return 1;
     }
 
+   
+
     int child_number = stoi(argv[1]);
     string shm_name = argv[2];
     string sem_name = argv[3];
+
+    cout << "I am child number " << child_number << ", received shared memory name "<< shm_name << " and " << sem_name << endl;
 
     int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
     if (shm_fd == -1) {
@@ -47,13 +53,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int idx = shared_data->index;
-    shared_data->response[idx].child_number = child_number;
+    // using two slots
+    int idx = shared_data->index*2;
+
+    // childing number in 1st slot 
+    shared_data->response[idx] = child_number;
 
     cout << "Child number " << child_number << ": What is my lucky number?" << endl;
-    cin >> shared_data->response[idx].lucky_number;
+    cin >> shared_data->response[idx+1];
 
+    // increment by 2 
     shared_data->index++;
+
+    cout << "I have written my child number to slot " << idx <<" and my lucky number to slot " << idx+1 << ", and updated index to" << idx+2 << endl;
 
     if (sem_post(my_sem) == -1) {
         perror("sem_post failed");
@@ -69,5 +81,6 @@ int main(int argc, char* argv[]) {
         perror("close failed");
     }
 
+    cout << "Child x closed access to shared memory and terminates. " << endl;
     return 0;
 }

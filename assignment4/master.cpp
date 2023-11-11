@@ -27,6 +27,7 @@ int main(int argc, char* argv[]) {
         perror("shm_open failed");
         return 1;
     }
+    cout << "Master created a shared memory segment named " << shm_name <<endl;
 
     if (ftruncate(shm_fd, sizeof(CLASS)) == -1) {
         perror("ftruncate failed");
@@ -42,6 +43,7 @@ int main(int argc, char* argv[]) {
     }
 
     shared_data->index = 0;
+    cout << "Master initializes index in the shared structure to zero" << endl;
 
     sem_t* my_sem = sem_open(sem_name.c_str(), O_CREAT | O_EXCL, 0666, 1);
     if (my_sem == SEM_FAILED) {
@@ -51,7 +53,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    cout << "Master created a semaphore named "<< sem_name << endl;
+
     vector<pid_t> children;
+
+    cout << "Master created " << num_processes << " child processes to execute slave"<< endl;
     for (int i = 0; i < num_processes; ++i) {
         pid_t pid = fork();
         if (pid == 0) {
@@ -66,14 +72,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    cout << "Master waits for all child processes to terminate" << endl;
     for (pid_t child : children) {
         int status;
         waitpid(child, &status, 0);
     }
+    cout << "Master received termination signals from all n child processes" << endl;
 
-    for (int i = 0; i < shared_data->index; ++i) {
-        cout << "Child " << shared_data->response[i].child_number << " wrote lucky number " << shared_data->response[i].lucky_number << endl;
-    }
+    cout << "Updated content of shared memory segment after access by child processes:" << endl;
+    cout << "--- content of shared memory --- " << endl;
+    for (int i = 0; i < 10; ++i) {                      // for every byte from mySmh.h, print contents
+            cout << shared_data-> response[i] << " ";
+        }
+        cout << endl;
+        
 
     if (sem_close(my_sem) == -1) {
         perror("sem_close failed");
@@ -81,6 +93,8 @@ int main(int argc, char* argv[]) {
     if (sem_unlink(sem_name.c_str()) == -1) {
         perror("sem_unlink failed");
     }
+    
+    cout << "Master removed the semaphore" << endl;
 
     if (munmap(shared_data, sizeof(CLASS)) == -1) {
         perror("munmap failed");
@@ -92,5 +106,6 @@ int main(int argc, char* argv[]) {
         perror("shm_unlink failed");
     }
 
+    cout << "Master closed access to shared memory, removed shared memory segment, and is exiting" << endl;
     return 0;
 }
